@@ -1,0 +1,81 @@
+#Configuration file for: https://github.com/akhilvatts/storage-blobs-dotnet-webapp
+trigger:
+- master
+
+variables:
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+stages:
+- stage: 'Build'
+  displayName: 'Build StorageBlobs Web Application'
+  jobs:
+  - job: 'Build'
+    displayName: 'Build job'
+    pool:
+      vmImage: 'windows-latest'
+
+    variables:
+      nugetConfigPath: '$(Build.SourcesDirectory)\nuget.config'
+
+    steps:
+      - task: NuGetToolInstaller@1
+
+      - task: NuGetCommand@2
+        displayName: 'NuGet restore'
+        inputs:
+          restoreSolution: '**/*.sln'
+          feedsToUse: config
+          nugetConfigPath: '$(nugetConfigPath)'
+
+      - task: VSBuild@1
+        displayName: 'Build solution'
+        inputs:
+          solution: '**/*.sln'
+          msbuildArgs: '/p:platform="Any CPU" /p:BuildingProject=true /p:DeployOnBuild=true /p:outdir="$(Build.SourcesDirectory)\WebApp-Storage-DotNet\deploy"'
+          platform: '$(buildPlatform)'
+          configuration: '$(buildConfiguration)'
+
+      - task: CopyFiles@2
+        displayName: 'Copy Generated artifacts to Artifacts Drop'
+        inputs:
+          SourceFolder: '$(Build.SourcesDirectory)\WebApp-Storage-DotNet\deploy\_PublishedWebsites\WebApp-Storage-DotNet'
+          Contents: '**'
+          TargetFolder: '$(Build.SourcesDirectory)\deploy'
+
+      - task: ArchiveFiles@2
+        displayName: 'Create Package'
+        inputs:
+          rootFolderOrFile: $(Build.SourcesDirectory)\deploy
+          includeRootFolder: false
+          archiveFile: $(Build.ArtifactStagingDirectory)\WebPackage.V$(Build.BuildNumber).zip
+
+      - task: PublishBuildArtifacts@1
+        displayName: 'Publish Artifact'
+        inputs:
+          PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+          ArtifactName: 'drop'
+          publishLocation: 'Container'
+
+- stage: 'Dev'
+  displayName: 'Deploy to the dev environment'
+  dependsOn: Build
+  jobs:
+  - deployment: Deploy
+    pool:
+      vmImage: 'windows-latest'
+    environment: dev
+    variables:
+    - group: 'Release Variables'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          - task: AzureWebApp@1
+            displayName: 'Deploy To StorageBlob WebApp'
+            inputs:
+              azureSubscription: 'MSDN Subscription'
+              appName: '$(WebAppNameDev)'
+              package: '$(Pipeline.Workspace)/drop/*.zip'
