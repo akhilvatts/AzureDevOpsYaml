@@ -1,0 +1,43 @@
+#Configuration file for: https://github.com/akhilvatts/storage-blobs-dotnet-webapp
+
+trigger:
+- master
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildPlatform: 'Any CPU'
+  buildConfiguration: 'Release'
+
+steps:
+- task: NuGetToolInstaller@1
+
+- task: NuGetCommand@2
+  displayName: 'NuGet restore'
+  inputs:
+    restoreSolution: '**/*.sln'
+    feedsToUse: config
+    nugetConfigPath: '$(Build.SourcesDirectory)\nuget.config'
+
+- task: VSBuild@1
+  displayName: 'Build solution'
+  inputs:
+    solution: '**/*.sln'
+    msbuildArgs: '/p:platform="Any CPU" /p:BuildingProject=true /p:DeployOnBuild=true /p:outdir="$(Build.SourcesDirectory)\WebApp-Storage-DotNet\deploy"'
+    platform: '$(buildPlatform)'
+    configuration: '$(buildConfiguration)'
+    
+- task: ArchiveFiles@2
+  displayName: 'Create Package'
+  inputs:
+    rootFolderOrFile: $$(Build.SourcesDirectory)\WebApp-Storage-DotNet\deploy\_PublishedWebsites\WebApp-Storage-DotNet
+    includeRootFolder: false
+    archiveFile: $(Build.ArtifactStagingDirectory)\WebPackage.V$(Build.BuildNumber).zip
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
